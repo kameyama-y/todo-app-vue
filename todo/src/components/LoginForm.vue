@@ -1,18 +1,29 @@
 <script setup>
 import { ref } from "vue";
 import { useRouter } from "vue-router";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "../firebase"; // Firebaseの認証モジュールをインポート
 
 const router = useRouter();
 const username = ref("");
 const password = ref("");
 
-const handleLogin = () => {
-  console.log("ログイン情報:", {
-    username: username.value,
-    password: password.value,
-  });
-  // 仮にログイン成功と仮定して遷移
-  router.push("/todo");
+const handleLogin = async () => {
+  try {
+    const userCredential = await signInWithEmailAndPassword(
+      auth,
+      username.value,
+      password.value
+    );
+    const user = userCredential.user;
+    console.log("ログイン成功:", user);
+    router.push("/todo");
+  } catch (error) {
+    console.error("ログインエラー:", error);
+    alert(
+      "ログインに失敗しました。ユーザー名またはパスワードを確認してください。"
+    );
+  }
 };
 </script>
 
