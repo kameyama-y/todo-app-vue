@@ -1,5 +1,17 @@
 <script setup>
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
+import {
+  collection,
+  query,
+  orderBy,
+  doc,
+  getDocs,
+  updateDoc,
+  addDoc,
+  deleteDoc,
+  serverTimestamp,
+} from "firebase/firestore";
+import { db } from "../firebase";
 
 // ダイアログ表示状態
 const showDialog = ref(false);
@@ -7,6 +19,8 @@ const showDialog = ref(false);
 const todo_text = ref("");
 // Todoリスト（表示用）
 const todoList = ref([]);
+// 編集中のタスクを保持する変数を追加
+const editingTodo = ref(null);
 
 // ダイアログを開く関数
 const openDialog = () => {
@@ -18,20 +32,91 @@ const closeDialog = () => {
   showDialog.value = false;
 };
 
-// タスク追加処理
-const addTodo = () => {
-  const text = todo_text.value.trim();
-  if (text) {
-    todoList.value.push({ text, done: false });
-    todo_text.value = ""; // 入力欄をクリア
-    closeDialog(); // ダイアログを閉じる
+// コンポーネントがマウントされたら取得
+onMounted(() => {
+  // FirestoreからTodoリストを取得
+  fetchTodos();
+});
+
+// FirestoreからTodoリストを取得する関数
+const fetchTodos = async () => {
+  try {
+    const q = query(collection(db, "todos"), orderBy("createdAt", "desc"));
+    const querySnapshot = await getDocs(q);
+
+    todoList.value = querySnapshot.docs.map((doc) => ({
+      id: doc.id, // 🔑 FirestoreのID
+      ...doc.data(), // text, done など
+    }));
+  } catch (e) {
+    console.error("Firestoreからの取得失敗:", e);
   }
 };
 
-// タスク削除処理
-const removeTodo = (index) => {
-  todoList.value.splice(index, 1);
+// タスク追加処理
+const addTodo = async () => {
+  const text = todo_text.value.trim();
+  if (text) {
+    try {
+      // Firestoreに新しいタスクを追加
+      const docRef = await addDoc(collection(db, "todos"), {
+        text,
+        done: false,
+        createdAt: serverTimestamp(),
+      });
+      // ローカルリストに追加
+      todoList.value.push({ id: docRef.id, text, done: false });
+      todo_text.value = "";
+      closeDialog();
+    } catch (e) {
+      console.error("Firestoreへの追加失敗:", e);
+    }
+  }
 };
+
+// 編集モードに入る
+const startEdit = (todo) => {
+  editingTodo.value = { ...todo }; // コピー
+  todo_text.value = editingTodo.value.text;
+  showDialog.value = true;
+};
+
+// 編集確定
+const saveEdit = async () => {
+  if (editingTodo.value) {
+    await updateDoc(doc(db, "todos", editingTodo.value.id), {
+      text: todo_text.value,
+    });
+    editingTodo.value = null;
+  }
+  todo_text.value = "";
+  showDialog.value = false;
+  fetchTodos();
+};
+
+// チェックボックス更新処理
+const toggleDone = async (todo) => {
+  await updateDoc(doc(db, "todos", todo.id), {
+    done: todo.done,
+  });
+};
+
+// タスク削除処理
+const removeTodo = async (id) => {
+  try {
+    // Firestoreから削除
+    await deleteDoc(doc(db, "todos", id));
+    // ローカルリストから削除
+    const index = todoList.value.findIndex((todo) => todo.id === id);
+    if (index !== -1) {
+      todoList.value.splice(index, 1);
+    }
+  } catch (e) {
+    console.error("Firestoreからの削除失敗:", e);
+  }
+};
+
+onMounted(fetchTodos);
 </script>
 
 <template>
@@ -46,29 +131,35 @@ const removeTodo = (index) => {
       <li v-for="(todo, index) in todoList" :key="index" class="todo-item">
         <label class="todo-label">
           <!-- チェックボックス -->
-          <input type="checkbox" v-model="todo.done" class="checkbox" />
+          <input
+            type="checkbox"
+            @change="toggleDone(todo)"
+            v-model="todo.done"
+            class="checkbox"
+          />
           <!-- タスクのテキスト -->
           <span :class="{ done: todo.done }">{{ todo.text }}</span>
         </label>
+        <!-- 編集ボタン -->
+        <button class="edit-button" @click="startEdit(todo)">編集</button>
         <!-- 削除ボタン -->
-        <button class="delete-button" @click="removeTodo(index)">削除</button>
+        <button class="delete-button" @click="removeTodo(todo.id)">削除</button>
       </li>
     </ul>
 
-    <!-- モーダルダイアログ -->
+    <!-- 追加・編集ダイアログ -->
     <div v-if="showDialog" class="modal-overlay">
-      <div class="modal-content" @click.stop>
-        <h3>新しいタスクを追加</h3>
-        <input
-          id="todo_text"
-          v-model="todo_text"
-          type="text"
-          placeholder="タスクを入力"
-          required
-        />
+      <div class="modal-content">
+        <h3>{{ editingTodo ? "タスクを編集" : "新しいタスクを追加" }}</h3>
+        <input v-model="todo_text" type="text" placeholder="タスクを入力" />
         <div class="modal-buttons">
-          <button class="modal-button" @click="addTodo">追加</button>
-          <button class="modal-button" @click="closeDialog">閉じる</button>
+          <button class="modal-button" v-if="editingTodo" @click="saveEdit">
+            更新
+          </button>
+          <button class="modal-button" v-else @click="addTodo">追加</button>
+          <button class="modal-button" @click="showDialog = false">
+            閉じる
+          </button>
         </div>
       </div>
     </div>
@@ -116,6 +207,21 @@ body {
   border-radius: 5px;
   cursor: pointer;
 }
+.delete-button:hover {
+  background-color: #ff1a1a; /* ホバー時の背景色 */
+}
+.edit-button {
+  background-color: #007bff;
+  border: none;
+  color: white;
+  padding: 5px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.edit-button:hover {
+  background-color: #0056b3;
+}
+
 .modal-overlay {
   position: fixed;
   top: 0;
