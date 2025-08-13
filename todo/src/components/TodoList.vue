@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, computed } from "vue";
 import {
   collection,
   query,
@@ -21,6 +21,9 @@ const todo_text = ref("");
 const todoList = ref([]);
 // 編集中のタスクを保持する変数を追加
 const editingTodo = ref(null);
+//並び替え基準
+const sortKey = ref("text");
+const sortOrder = ref("asc");
 
 // ダイアログを開く関数
 const openDialog = () => {
@@ -67,6 +70,7 @@ const addTodo = async () => {
       // ローカルリストに追加
       todoList.value.push({ id: docRef.id, text, done: false });
       todo_text.value = "";
+      fetchTodos(); // 再取得して最新の状態にする
       closeDialog();
     } catch (e) {
       console.error("Firestoreへの追加失敗:", e);
@@ -116,6 +120,26 @@ const removeTodo = async (id) => {
   }
 };
 
+// 並び替え処理
+const toggleSort = (key) => {
+  if (sortKey.value === key) {
+    sortOrder.value = sortOrder.value === "asc" ? "desc" : "asc";
+  } else {
+    sortKey.value = key;
+    sortOrder.value = "asc"; // 新しいキーでの並び替えは昇順
+  }
+};
+
+// 並び替えられたTodoリストを返す
+const sortTodos = computed(() => {
+  return [...todoList.value].sort((a, b) => {
+    let result = 0;
+    if (a[sortKey.value] < b[sortKey.value]) result = 1;
+    if (a[sortKey.value] > b[sortKey.value]) result = -1;
+    return sortOrder.value === "asc" ? result : -result;
+  });
+});
+
 onMounted(fetchTodos);
 </script>
 
@@ -127,25 +151,45 @@ onMounted(fetchTodos);
     </div>
 
     <!-- タスク一覧 -->
-    <ul>
-      <li v-for="(todo, index) in todoList" :key="index" class="todo-item">
-        <label class="todo-label">
-          <!-- チェックボックス -->
-          <input
-            type="checkbox"
-            @change="toggleDone(todo)"
-            v-model="todo.done"
-            class="checkbox"
-          />
+    <table class="todo-table">
+      <thead>
+        <tr>
+          <th @click="toggleSort('text')">タスク名</th>
+          <th @click="toggleSort('createdAt')">作成日</th>
+          <th @click="toggleSort('done')">完了</th>
+          <th>編集</th>
+          <th>削除</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="todo in sortTodos" :key="todo.id">
           <!-- タスクのテキスト -->
-          <span :class="{ done: todo.done }">{{ todo.text }}</span>
-        </label>
-        <!-- 編集ボタン -->
-        <button class="edit-button" @click="startEdit(todo)">編集</button>
-        <!-- 削除ボタン -->
-        <button class="delete-button" @click="removeTodo(todo.id)">削除</button>
-      </li>
-    </ul>
+          <td :class="{ done: todo.done }">{{ todo.text }}</td>
+          <td :class="{ done: todo.done }">
+            <!-- タスクの作成日 -->
+            {{ todo.createdAt.toDate().toLocaleDateString() }}
+          </td>
+          <td>
+            <!-- タスクの完了状態 -->
+            <input
+              type="checkbox"
+              v-model="todo.done"
+              @change="toggleDone(todo)"
+            />
+          </td>
+          <td>
+            <!-- 編集ボタン -->
+            <button class="edit-button" @click="startEdit(todo)">編集</button>
+          </td>
+          <td>
+            <!-- 削除ボタン -->
+            <button class="delete-button" @click="removeTodo(todo.id)">
+              削除
+            </button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
 
     <!-- 追加・編集ダイアログ -->
     <div v-if="showDialog" class="modal-overlay">
@@ -175,6 +219,22 @@ body {
   background-color: white; /* 背景を白に */
   min-height: 100vh; /* 画面全体に背景を広げる */
 }
+.todo-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0; /* 枠の隙間をなくす */
+  table-layout: auto;
+  border: 2px solid #ccc; /* 枠線を太く */
+  border-radius: 8px; /* 角丸 */
+  overflow: hidden; /* 角丸内に収める */
+}
+.todo-table th,
+.todo-table td {
+  padding: 8px;
+  border: 2px solid #ccc;
+  text-align: center;
+  white-space: nowrap; /* テキストの折り返しを防ぐ */
+}
 .title {
   color: blue;
 }
@@ -194,7 +254,7 @@ body {
   padding: 0;
   border: none;
   outline: none;
-  margin-left: auto; /* ←これで右端に寄せる！ */
+  margin-left: auto; /* 右端に寄せる！ */
 }
 .plus-button:hover {
   background-color: #5d99ff; /* ホバー時の背景色 */
@@ -206,6 +266,7 @@ body {
   padding: 5px 10px;
   border-radius: 5px;
   cursor: pointer;
+  display: inline-block;
 }
 .delete-button:hover {
   background-color: #ff1a1a; /* ホバー時の背景色 */
@@ -217,6 +278,7 @@ body {
   padding: 5px 10px;
   border-radius: 5px;
   cursor: pointer;
+  display: inline-block;
 }
 .edit-button:hover {
   background-color: #0056b3;
@@ -277,7 +339,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-grow: 1; /* ← テキストがボタンと分かれて横幅を広く取れるように */
+  flex-grow: 1; /* ラベルが可能な限り広がるように */
 }
 .done {
   color: #999;
