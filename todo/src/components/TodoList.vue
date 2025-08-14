@@ -24,6 +24,12 @@ const editingTodo = ref(null);
 //並び替え基準
 const sortKey = ref("text");
 const sortOrder = ref("asc");
+// 検索用キーワード
+const searchQuery = ref("");
+// ステータスフィルタ
+const statusFilter = ref("");
+// 作成日フィルタ
+const searchDate = ref("");
 
 // ダイアログを開く関数
 const openDialog = () => {
@@ -131,8 +137,31 @@ const toggleSort = (key) => {
 };
 
 // 並び替えられたTodoリストを返す
-const sortTodos = computed(() => {
-  return [...todoList.value].sort((a, b) => {
+const searchAndSortTodos = computed(() => {
+  // 検索でフィルタ
+  let filtered = todoList.value.filter((todo) =>
+    todo.text.toLowerCase().includes(searchQuery.value.toLowerCase())
+  );
+
+  // 作成日フィルタ
+  if (searchDate.value) {
+    filtered = filtered.filter((todo) => {
+      const createDate = todo.createdAt.toDate();
+      const formatted = createDate.toISOString().split("T")[0];
+      // "YYYY-MM-DD" 形式
+      return formatted === searchDate.value;
+    });
+  }
+
+  // ステータスフィルタ
+  if (statusFilter.value) {
+    filtered = filtered.filter((todo) =>
+      statusFilter.value === "completed" ? todo.done : !todo.done
+    );
+  }
+
+  // 並び替え
+  return [...filtered].sort((a, b) => {
     let result = 0;
     if (a[sortKey.value] < b[sortKey.value]) result = 1;
     if (a[sortKey.value] > b[sortKey.value]) result = -1;
@@ -147,7 +176,25 @@ onMounted(fetchTodos);
   <div class="todo-container">
     <div class="title_area">
       <h2 class="title">TODOリスト</h2>
-      <button @click="openDialog" class="plus-button">＋</button>
+      <div class="right-controls">
+        <!-- タスク名検索ボックス -->
+        <input
+          v-model="searchQuery"
+          type="text"
+          placeholder="タスクを検索..."
+          class="search-box"
+        />
+        <!-- 作成日検索ボックス -->
+        <input v-model="searchDate" type="date" class="date-search-box" />
+        <!-- 完了/未完了フィルタ -->
+        <select v-model="statusFilter" class="status-filter">
+          <option value="">すべて</option>
+          <option value="completed">完了</option>
+          <option value="incomplete">未完了</option>
+        </select>
+
+        <button @click="openDialog" class="plus-button">＋</button>
+      </div>
     </div>
 
     <!-- タスク一覧 -->
@@ -162,7 +209,7 @@ onMounted(fetchTodos);
         </tr>
       </thead>
       <tbody>
-        <tr v-for="todo in sortTodos" :key="todo.id">
+        <tr v-for="todo in searchAndSortTodos" :key="todo.id">
           <!-- タスクのテキスト -->
           <td :class="{ done: todo.done }">{{ todo.text }}</td>
           <td :class="{ done: todo.done }">
@@ -219,6 +266,43 @@ body {
   background-color: white; /* 背景を白に */
   min-height: 100vh; /* 画面全体に背景を広げる */
 }
+.right-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px; /* 各要素の間隔 */
+  margin-left: auto; /* 右端寄せ */
+}
+.right-controls input,
+.right-controls select,
+.right-controls button {
+  padding: 8px 12px;
+  border: 2px solid #ccc;
+  border-radius: 5px;
+  font-size: 14px;
+  height: 35px; /* 高さを統一 */
+}
+.right-controls .search-box {
+  width: 200px;
+}
+
+.right-controls .date-search-box {
+  width: 150px;
+}
+
+.right-controls .status-filter {
+  width: 100px;
+}
+.right-controls .plus-button {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  font-size: 24px;
+  padding: 0;
+  border: none;
+  outline: none;
+  line-height: 1;
+}
+
 .todo-table {
   width: 100%;
   border-collapse: separate;
@@ -242,19 +326,6 @@ body {
   display: flex;
   align-items: center;
   width: 100%;
-}
-.plus-button {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  font-size: 24px;
-  padding: 0;
-  border: none;
-  outline: none;
-  margin-left: auto; /* 右端に寄せる！ */
 }
 .plus-button:hover {
   background-color: #5d99ff; /* ホバー時の背景色 */
