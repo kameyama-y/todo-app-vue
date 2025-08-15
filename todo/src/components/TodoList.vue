@@ -1,14 +1,8 @@
 <script setup>
 import { ref, onMounted, computed } from "vue";
 import {
-  collection,
-  query,
-  orderBy,
   doc,
-  getDocs,
   updateDoc,
-  addDoc,
-  deleteDoc,
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../firebase";
@@ -42,45 +36,47 @@ const closeDialog = () => {
 };
 
 // コンポーネントがマウントされたら取得
-onMounted(() => {
-  // FirestoreからTodoリストを取得
-  fetchTodos();
+onMounted(async () => {
+  const res = await fetch("http://localhost:3000/todos");
+  const todos = await res.json();
+  // SQLiteのtitleをtextに変換
+  todoList.value = todos.map((todo) => ({
+    id: todo.id,
+    text: todo.title,
+    done: todo.completed,
+    createdAt: todo.createdAt,
+  }));
 });
 
-// FirestoreからTodoリストを取得する関数
-const fetchTodos = async () => {
-  try {
-    const q = query(collection(db, "todos"), orderBy("createdAt", "desc"));
-    const querySnapshot = await getDocs(q);
-
-    todoList.value = querySnapshot.docs.map((doc) => ({
-      id: doc.id, // 🔑 FirestoreのID
-      ...doc.data(), // text, done など
-    }));
-  } catch (e) {
-    console.error("Firestoreからの取得失敗:", e);
-  }
-};
 
 // タスク追加処理
 const addTodo = async () => {
   const text = todo_text.value.trim();
-  if (text) {
-    try {
-      // Firestoreに新しいタスクを追加
-      const docRef = await addDoc(collection(db, "todos"), {
-        text,
-        done: false,
-        createdAt: serverTimestamp(),
-      });
-      // ローカルリストに追加
-      todoList.value.push({ id: docRef.id, text, done: false });
-      todo_text.value = "";
-      fetchTodos(); // 再取得して最新の状態にする
-      closeDialog();
-    } catch (e) {
-      console.error("Firestoreへの追加失敗:", e);
-    }
+  if (!text) return;
+  try {
+    // Node.js サーバーに POST
+    const res = await fetch("http://localhost:3000/todos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: text }),
+    });
+
+    if (!res.ok) throw new Error("タスク追加失敗");
+
+    const newTodo = await res.json();
+
+    // ローカルリストに追加
+    todoList.value.push({
+      id: newTodo.id,// ID
+      text: newTodo.title,// タスク名
+      done: newTodo.completed ? true : false, // 完了状態
+      createdAt: newTodo.createdAt || serverTimestamp(), // 作成日時
+    });
+
+    todo_text.value = "";
+    closeDialog();
+  } catch (e) {
+    console.error("SQLiteへの追加失敗:", e);
   }
 };
 
@@ -101,28 +97,29 @@ const saveEdit = async () => {
   }
   todo_text.value = "";
   showDialog.value = false;
-  fetchTodos();
 };
 
 // チェックボックス更新処理
 const toggleDone = async (todo) => {
-  await updateDoc(doc(db, "todos", todo.id), {
-    done: todo.done,
-  });
+  // await updateDoc(doc(db, "todos", todo.id), {
+  //   done: todo.done,
+  // });
 };
 
 // タスク削除処理
 const removeTodo = async (id) => {
   try {
-    // Firestoreから削除
-    await deleteDoc(doc(db, "todos", id));
+    // Node.js サーバーに DELETE
+    const res = await fetch(`http://localhost:3000/todos/${id}`, {
+      method: "DELETE",
+    });
+
+    if (!res.ok) throw new Error("タスク削除失敗");
+
     // ローカルリストから削除
-    const index = todoList.value.findIndex((todo) => todo.id === id);
-    if (index !== -1) {
-      todoList.value.splice(index, 1);
-    }
+    todoList.value = todoList.value.filter(todo => todo.id !== id);
   } catch (e) {
-    console.error("Firestoreからの削除失敗:", e);
+    console.error(e);
   }
 };
 
@@ -136,31 +133,26 @@ const toggleSort = (key) => {
   }
 };
 
-// 並び替えられたTodoリストを返す
+// 検索・フィルタ・ソートをリアクティブに
 const searchAndSortTodos = computed(() => {
-  // 検索でフィルタ
   let filtered = todoList.value.filter((todo) =>
     todo.text.toLowerCase().includes(searchQuery.value.toLowerCase())
   );
 
-  // 作成日フィルタ
   if (searchDate.value) {
     filtered = filtered.filter((todo) => {
-      const createDate = todo.createdAt.toDate();
+      const createDate = new Date(todo.createdAt);
       const formatted = createDate.toISOString().split("T")[0];
-      // "YYYY-MM-DD" 形式
       return formatted === searchDate.value;
     });
   }
 
-  // ステータスフィルタ
   if (statusFilter.value) {
     filtered = filtered.filter((todo) =>
       statusFilter.value === "completed" ? todo.done : !todo.done
     );
   }
 
-  // 並び替え
   return [...filtered].sort((a, b) => {
     let result = 0;
     if (a[sortKey.value] < b[sortKey.value]) result = 1;
@@ -168,8 +160,6 @@ const searchAndSortTodos = computed(() => {
     return sortOrder.value === "asc" ? result : -result;
   });
 });
-
-onMounted(fetchTodos);
 </script>
 
 <template>
@@ -214,7 +204,7 @@ onMounted(fetchTodos);
           <td :class="{ done: todo.done }">{{ todo.text }}</td>
           <td :class="{ done: todo.done }">
             <!-- タスクの作成日 -->
-            {{ todo.createdAt.toDate().toLocaleDateString() }}
+            {{ new Date(todo.createdAt).toLocaleDateString() }}
           </td>
           <td>
             <!-- タスクの完了状態 -->
