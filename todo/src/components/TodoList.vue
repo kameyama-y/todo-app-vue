@@ -1,11 +1,6 @@
 <script setup>
 import { ref, onMounted, computed } from "vue";
-import {
-  doc,
-  updateDoc,
-  serverTimestamp,
-} from "firebase/firestore";
-import { db } from "../firebase";
+import { serverTimestamp } from "firebase/firestore";
 
 // ダイアログ表示状態
 const showDialog = ref(false);
@@ -37,6 +32,12 @@ const closeDialog = () => {
 
 // コンポーネントがマウントされたら取得
 onMounted(async () => {
+  // 初期データ取得
+  await fetchTodos();
+});
+
+// タスク一覧を取得する関数
+const fetchTodos = async () => {
   const res = await fetch("http://localhost:3000/todos");
   const todos = await res.json();
   // SQLiteのtitleをtextに変換
@@ -46,8 +47,7 @@ onMounted(async () => {
     done: todo.completed,
     createdAt: todo.createdAt,
   }));
-});
-
+};
 
 // タスク追加処理
 const addTodo = async () => {
@@ -67,8 +67,8 @@ const addTodo = async () => {
 
     // ローカルリストに追加
     todoList.value.push({
-      id: newTodo.id,// ID
-      text: newTodo.title,// タスク名
+      id: newTodo.id, // ID
+      text: newTodo.title, // タスク名
       done: newTodo.completed ? true : false, // 完了状態
       createdAt: newTodo.createdAt || serverTimestamp(), // 作成日時
     });
@@ -90,9 +90,17 @@ const startEdit = (todo) => {
 // 編集確定
 const saveEdit = async () => {
   if (editingTodo.value) {
-    await updateDoc(doc(db, "todos", editingTodo.value.id), {
-      text: todo_text.value,
+    await fetch(`http://localhost:3000/todos/${editingTodo.value.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: todo_text.value,
+        completed: editingTodo.value.done,
+      }),
     });
+
+    // DBから最新データを取り直して反映
+    await fetchTodos();
     editingTodo.value = null;
   }
   todo_text.value = "";
@@ -101,9 +109,21 @@ const saveEdit = async () => {
 
 // チェックボックス更新処理
 const toggleDone = async (todo) => {
-  // await updateDoc(doc(db, "todos", todo.id), {
-  //   done: todo.done,
-  // });
+  try {
+    const newDone = !todo.done;
+    // Node.js サーバーに PUT
+    const res = await fetch(`http://localhost:3000/todos/${todo.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: todo.text, completed: newDone }),
+    });
+
+    if (!res.ok) throw new Error("タスク更新失敗");
+
+    await fetchTodos(); // DBから再取得
+  } catch (e) {
+    console.error(e);
+  }
 };
 
 // タスク削除処理
@@ -117,7 +137,7 @@ const removeTodo = async (id) => {
     if (!res.ok) throw new Error("タスク削除失敗");
 
     // ローカルリストから削除
-    todoList.value = todoList.value.filter(todo => todo.id !== id);
+    todoList.value = todoList.value.filter((todo) => todo.id !== id);
   } catch (e) {
     console.error(e);
   }
@@ -155,8 +175,8 @@ const searchAndSortTodos = computed(() => {
 
   return [...filtered].sort((a, b) => {
     let result = 0;
-    if (a[sortKey.value] < b[sortKey.value]) result = 1;
-    if (a[sortKey.value] > b[sortKey.value]) result = -1;
+    if (a[sortKey.value] < b[sortKey.value]) result = -1;
+    if (a[sortKey.value] > b[sortKey.value]) result = 1;
     return sortOrder.value === "asc" ? result : -result;
   });
 });
@@ -210,13 +230,19 @@ const searchAndSortTodos = computed(() => {
             <!-- タスクの完了状態 -->
             <input
               type="checkbox"
-              v-model="todo.done"
+              :checked="todo.done"
               @change="toggleDone(todo)"
             />
           </td>
           <td>
             <!-- 編集ボタン -->
-            <button class="edit-button" @click="startEdit(todo)">編集</button>
+            <button
+              class="edit-button"
+              :disabled="todo.done"
+              @click="startEdit(todo)"
+            >
+              編集
+            </button>
           </td>
           <td>
             <!-- 削除ボタン -->
@@ -343,6 +369,16 @@ body {
 }
 .edit-button:hover {
   background-color: #0056b3;
+}
+.edit-button:disabled {
+  background-color: #ccc; /* 無効時の背景色 */
+  color: #666; /* 無効時の文字色 */
+  cursor: not-allowed; /* カーソルも禁止マーク */
+}
+/* 無効状態では hover を無効化 */
+.edit-button:disabled:hover {
+  background-color: #ccc; /* hover しても変化なし */
+  color: #666;
 }
 
 .modal-overlay {
