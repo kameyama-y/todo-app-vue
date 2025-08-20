@@ -1,4 +1,8 @@
 # todo
+マテリアルUIを使ってもいい（UI コンポーネントライブラリ）
+Vue.js向けはVuetify 
+vue add vuetify（コマンド）
+
 
 This template should help get you started developing with Vue 3 in Vite.
 
