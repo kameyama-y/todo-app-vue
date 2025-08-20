@@ -1,10 +1,12 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import LoginForm from '../components/LoginForm.vue'
 import TodoList from '../components/TodoList.vue'
+import RegisterPage from "../components/RegisterPage.vue"
 
 const routes = [
-  { path: '/', component: LoginForm },
+  { path: '/login', component: LoginForm },
   { path: '/todo', component: TodoList },
+  { path: '/register', component: RegisterPage }
 ]
 
 const router = createRouter({

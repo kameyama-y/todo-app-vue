@@ -120,7 +120,8 @@ const toggleDone = async (todo) => {
 
     if (!res.ok) throw new Error("タスク更新失敗");
 
-    await fetchTodos(); // DBから再取得
+    // 再取得せずにローカルの値だけ反映
+    todo.done = !todo.done;
   } catch (e) {
     console.error(e);
   }

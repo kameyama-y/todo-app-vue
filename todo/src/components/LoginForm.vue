@@ -1,8 +1,7 @@
 <script setup>
 import { ref } from "vue";
 import { useRouter } from "vue-router";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "../firebase"; // Firebaseの認証モジュールをインポート
+import axios from "axios";
 
 const router = useRouter();
 const username = ref("");
@@ -10,12 +9,11 @@ const password = ref("");
 
 const handleLogin = async () => {
   try {
-    const userCredential = await signInWithEmailAndPassword(
-      auth,
-      username.value,
-      password.value
-    );
-    const user = userCredential.user;
+    const res = await axios.post("http://localhost:3000/login", {
+      email: username.value,
+      password: password.value,
+    });
+    const user = res.data.user;
     console.log("ログイン成功:", user);
     router.push("/todo");
   } catch (error) {
@@ -41,6 +39,11 @@ const handleLogin = async () => {
       </div>
       <button class="login-button" type="submit">ログイン</button>
     </form>
+    <!-- 新規登録誘導文 -->
+    <p class="register-link">
+      アカウントをお持ちでない場合は
+      <router-link to="/register">こちらから新規登録</router-link>
+    </p>
   </div>
 </template>
 
@@ -87,5 +90,6 @@ button {
 }
 .login-button {
   margin: 0 auto;
+  border: 1px solid #000;
 }
 </style>
